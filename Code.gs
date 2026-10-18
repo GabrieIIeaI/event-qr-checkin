@@ -12,7 +12,7 @@ const EVENT_NAME = 'My Event'; // <-- change to your event name (used in emails)
 // Ticket design: a public PNG/JPG URL. The guest's QR is placed on it (in pixels of that image).
 // Set TICKET_TEMPLATE_URL to '' to email only the plain QR code.
 const TICKET_TEMPLATE_URL = 'https://raw.githubusercontent.com/GabrieIIeaI/event-qr-checkin/main/ticket-template.png';
-const TICKET_QR = { x: 188, y: 168, size: 140 }; // top-left corner + size of the QR on the template
+const TICKET_QR = { x: 12, y: 70, size: 175 }; // top-left corner + size of the QR on the template
 const QR_COLOR = '5c1a2e'; // QR color (hex, no #). Keep it dark for easy scanning.
 
 function onOpen() {
