@@ -14,6 +14,7 @@ const EVENT_NAME = 'My Event'; // <-- change to your event name (used in emails)
 const TICKET_TEMPLATE_URL = 'https://raw.githubusercontent.com/GabrieIIeaI/event-qr-checkin/main/ticket-template.png';
 const TICKET_QR = { x: 12, y: 70, size: 175 }; // top-left corner + size of the QR on the template
 const QR_COLOR = '5c1a2e'; // QR color (hex, no #). Keep it dark for easy scanning.
+const QR_BACKGROUND = '0000'; // '0000' = transparent (QR sits on the design), 'ffffff' = white box
 
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -51,7 +52,7 @@ function newCode_() {
 }
 
 function qrUrl_(code, size) {
-  return 'https://quickchart.io/qr?size=' + (size || 300) + '&margin=2&dark=' + QR_COLOR +
+  return 'https://quickchart.io/qr?size=' + (size || 300) + '&margin=2&dark=' + QR_COLOR + '&light=' + QR_BACKGROUND +
     '&text=' + encodeURIComponent(code);
 }
 
