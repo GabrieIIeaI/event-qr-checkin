@@ -72,3 +72,10 @@ Tip – one-tap setup link for staff (send privately, it contains the PIN):
   their camera only see the code text, so they can't "use up" their ticket.
 - If you edit `Code.gs` later: **Deploy > Manage deployments > Edit > Version: New version**
   (keeps the same URL).
+
+## Troubleshooting "Cannot reach the Web App"
+
+Open `YOUR_WEB_APP_URL?action=ping&pin=YOUR_PIN` in a browser. It should show `{"status":"ok"}`.
+- "Script function not found: doGet" → Deploy > Manage deployments > Edit > Version: **New version** > Deploy.
+- Google login / access denied → "Who has access" must be **Anyone**.
+- URL ends with `/dev` → use the `/exec` URL.

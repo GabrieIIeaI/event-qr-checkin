@@ -96,6 +96,7 @@ async function call(params) {
 
 function showSettings(message) {
   stopScanner();
+  $('btnSettings').textContent = 'Scanner';
   $('scan').style.display = 'none';
   $('settings').style.display = 'block';
   $('api').value = cfg.api || '';
@@ -103,19 +104,39 @@ function showSettings(message) {
   $('msg').textContent = message || '';
 }
 
+function msgHtml(html) { $('msg').innerHTML = html; }
+
+function validateApi(api) {
+  if (api === 'demo') return '';
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(api)) return 'The URL must start with https://script.google.com/macros/s/';
+  if (/\/dev(\?|$)/.test(api)) return 'This is the /dev (test) URL. Use the /exec URL from Deploy > Manage deployments.';
+  if (!/\/exec$/.test(api)) return 'The URL must end with /exec (copy it from Deploy > Manage deployments).';
+  return '';
+}
+
 async function save() {
   cfg = { api: $('api').value.trim(), pin: $('pin').value.trim() };
   if (!cfg.api || !cfg.pin) { $('msg').textContent = 'Fill both fields.'; return; }
+  const bad = validateApi(cfg.api);
+  if (bad) { $('msg').textContent = bad; return; }
   $('msg').textContent = 'Testing connection...';
   try {
     const res = await call({ action: 'ping' });
     if (res.status !== 'ok') { $('msg').textContent = res.message || 'Connection failed'; return; }
-  } catch (e) { $('msg').textContent = 'Cannot reach the Web App URL. Check it and that access is "Anyone".'; return; }
+  } catch (e) {
+    const test = cfg.api + '?' + new URLSearchParams({ action: 'ping', pin: cfg.pin });
+    msgHtml('Cannot reach the Web App. <a style="color:#90caf9" target="_blank" rel="noopener" id="testLink">Tap here to open the test link</a>. ' +
+      'It should show {"status":"ok"}.<br>&bull; "Script function not found: doGet" &rarr; Deploy &gt; Manage deployments &gt; Edit &gt; Version: New version &gt; Deploy.' +
+      '<br>&bull; Google login / access denied &rarr; set "Who has access" to Anyone.');
+    $('testLink').href = test;
+    return;
+  }
   localStorage.setItem('qrCheckinCfg', JSON.stringify(cfg));
   showScanner();
 }
 
 function showScanner() {
+  $('btnSettings').textContent = 'Settings';
   $('settings').style.display = 'none';
   $('scan').style.display = 'block';
   startScanner();
@@ -177,7 +198,11 @@ $('result').addEventListener('click', () => {
   busy = false;
   if (scanner) { try { scanner.resume(); } catch (e) {} }
 });
-$('btnSettings').onclick = () => showSettings();
+$('btnSettings').onclick = () => {
+  if ($('settings').style.display === 'block') {
+    if (cfg.api && cfg.pin) showScanner(); else $('msg').textContent = 'Fill the Web App URL and staff PIN, then tap Save.';
+  } else showSettings();
+};
 $('btnSave').onclick = save;
 $('btnDemo').onclick = () => { $('api').value = 'demo'; $('pin').value = 'demo'; save(); };
 $('btnDemoReset').onclick = () => { localStorage.removeItem('qrDemoUsed'); $('msg').textContent = 'Demo check-ins cleared.'; };
