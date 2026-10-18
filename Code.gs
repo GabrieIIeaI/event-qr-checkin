@@ -9,12 +9,19 @@ const HEADERS = ['Name', 'Email', 'Code', 'QR', 'Status', 'Checked-in at', 'Emai
 const COL = { NAME: 1, EMAIL: 2, CODE: 3, QR: 4, STATUS: 5, TIME: 6, SENT: 7 };
 const EVENT_NAME = 'My Event'; // <-- change to your event name (used in emails)
 
+// Ticket design: a public PNG/JPG URL. The guest's QR is placed on it (in pixels of that image).
+// Set TICKET_TEMPLATE_URL to '' to email only the plain QR code.
+const TICKET_TEMPLATE_URL = 'https://raw.githubusercontent.com/GabrieIIeaI/event-qr-checkin/main/ticket-template.png';
+const TICKET_QR = { x: 188, y: 168, size: 140 }; // top-left corner + size of the QR on the template
+const QR_COLOR = '5c1a2e'; // QR color (hex, no #). Keep it dark for easy scanning.
+
 function onOpen() {
   SpreadsheetApp.getUi()
     .createMenu('Event QR')
     .addItem('1) Setup sheet', 'setupSheet')
     .addItem('2) Generate QR codes', 'generateCodes')
     .addItem('3) Email QR codes to guests', 'sendEmails')
+    .addItem('Send a test ticket to me', 'sendTestTicket')
     .addSeparator()
     .addItem('Set staff PIN', 'setStaffPin')
     .addItem('Reset ALL check-ins', 'resetCheckins')
@@ -44,7 +51,45 @@ function newCode_() {
 }
 
 function qrUrl_(code, size) {
-  return 'https://quickchart.io/qr?size=' + (size || 300) + '&margin=2&text=' + encodeURIComponent(code);
+  return 'https://quickchart.io/qr?size=' + (size || 300) + '&margin=2&dark=' + QR_COLOR +
+    '&text=' + encodeURIComponent(code);
+}
+
+/** Returns the ticket image (template + QR) as a PNG blob, or the plain QR if no template is set. */
+function ticketBlob_(code) {
+  if (!TICKET_TEMPLATE_URL) return UrlFetchApp.fetch(qrUrl_(code, 400)).getBlob().setName('ticket-' + code + '.png');
+  const res = UrlFetchApp.fetch('https://quickchart.io/watermark', {
+    method: 'post',
+    contentType: 'application/json',
+    muteHttpExceptions: true,
+    payload: JSON.stringify({
+      mainImageUrl: TICKET_TEMPLATE_URL,
+      markImageUrl: qrUrl_(code, Math.max(300, TICKET_QR.size * 2)),
+      markWidth: TICKET_QR.size,
+      markHeight: TICKET_QR.size,
+      positionX: TICKET_QR.x,
+      positionY: TICKET_QR.y,
+      opacity: 1,
+    }),
+  });
+  if (res.getResponseCode() !== 200) throw new Error('Ticket image failed (' + res.getResponseCode() + '): ' + res.getContentText().slice(0, 200));
+  return res.getBlob().setContentType('image/png').setName('ticket-' + code + '.png');
+}
+
+function sendTicket_(email, name, code) {
+  const img = ticketBlob_(code);
+  MailApp.sendEmail({
+    to: email,
+    subject: 'Your ticket for ' + EVENT_NAME,
+    htmlBody:
+      '<p>Hi ' + name + ',</p>' +
+      '<p>This is your personal ticket for <b>' + EVENT_NAME + '</b>. ' +
+      'Show the QR code at the entrance. It can be used only once.</p>' +
+      '<p><img src="cid:ticket" style="max-width:100%;height:auto" alt="Ticket"></p>' +
+      '<p>Code: <b>' + code + '</b></p>',
+    inlineImages: { ticket: img },
+    attachments: [img],
+  });
 }
 
 function generateCodes() {
@@ -81,24 +126,19 @@ function sendEmails() {
     const name = r[COL.NAME - 1], email = r[COL.EMAIL - 1], code = r[COL.CODE - 1];
     if (!email || !code || r[COL.SENT - 1]) continue;
     if (MailApp.getRemainingDailyQuota() < 1) { skipped = rows.length - i; break; }
-    const img = UrlFetchApp.fetch(qrUrl_(code, 400)).getBlob().setName('ticket-' + code + '.png');
-    MailApp.sendEmail({
-      to: email,
-      subject: 'Your ticket for ' + EVENT_NAME,
-      htmlBody:
-        '<p>Hi ' + name + ',</p>' +
-        '<p>This is your personal ticket for <b>' + EVENT_NAME + '</b>. ' +
-        'Show this QR code at the entrance. It can be used only once.</p>' +
-        '<p><img src="cid:qr" width="300" height="300"></p>' +
-        '<p>Code: <b>' + code + '</b></p>',
-      inlineImages: { qr: img },
-      attachments: [img],
-    });
+    sendTicket_(email, name, code);
     sh.getRange(i + 2, COL.SENT).setValue(new Date());
     sent++;
+    Utilities.sleep(500);
   }
   SpreadsheetApp.getUi().alert(sent + ' email(s) sent.' +
     (skipped ? ' Daily Gmail quota reached; run again tomorrow for the remaining ' + skipped + '.' : ''));
+}
+
+function sendTestTicket() {
+  const me = Session.getEffectiveUser().getEmail();
+  sendTicket_(me, 'Test', 'TEST00000000');
+  SpreadsheetApp.getUi().alert('Test ticket sent to ' + me + '. (Its code is not valid at the entrance.)');
 }
 
 function setStaffPin() {

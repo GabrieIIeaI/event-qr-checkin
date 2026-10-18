@@ -13,6 +13,7 @@ Files:
 - `Code.gs` – backend (paste into Google Apps Script)
 - `index.html` – scanner page for the staff phones
 - `demo-tickets.html` – sample QR tickets for demo mode
+- `ticket-template.png` – ticket design; each guest's QR is placed on it (position set by `TICKET_QR` in `Code.gs`)
 
 ---
 
@@ -64,6 +65,13 @@ Tip – one-tap setup link for staff (send privately, it contains the PIN):
   never be accepted twice.
 - The sheet updates live: **Status = USED** and **Checked-in at** time — your attendance report.
 - **Event QR > Reset ALL check-ins** to clear test scans before the event.
+
+## Custom ticket design
+
+`Code.gs` emails each guest the ticket design with their QR code on it (made with the free QuickChart watermark API).
+- To change the design: upload a new PNG to the repo (or any public URL) and update `TICKET_TEMPLATE_URL`.
+- Adjust `TICKET_QR` (x, y, size in pixels of the image) to move/resize the QR.
+- **Event QR > Send a test ticket to me** shows the result in your inbox.
 
 ## Notes / limits
 
