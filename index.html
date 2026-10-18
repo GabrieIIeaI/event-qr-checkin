@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Event Check-in Scanner</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: #111; color: #fff; }
+  header { padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; background: #222; }
+  header h1 { font-size: 18px; margin: 0; }
+  header button { background: #444; color: #fff; border: 0; padding: 8px 12px; border-radius: 8px; font-size: 14px; }
+  #reader { width: 100%; max-width: 520px; margin: 0 auto; }
+  #result { position: fixed; inset: 0; display: none; flex-direction: column; justify-content: center; align-items: center;
+            text-align: center; padding: 24px; z-index: 10; }
+  #result .big { font-size: 42px; font-weight: 800; line-height: 1.1; }
+  #result .name { font-size: 30px; margin-top: 16px; font-weight: 600; }
+  #result .detail { font-size: 18px; margin-top: 12px; opacity: .9; }
+  #result .hint { position: absolute; bottom: 30px; font-size: 16px; opacity: .8; }
+  .ok { background: #12a150; } .used { background: #d32f2f; } .invalid { background: #ef6c00; } .wait { background: #333; }
+  #settings, #manual { max-width: 520px; margin: 16px auto; padding: 0 14px; }
+  label { display: block; margin: 12px 0 4px; font-size: 14px; opacity: .85; }
+  input { width: 100%; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #555; background: #1c1c1c; color: #fff; }
+  .btn { width: 100%; margin-top: 14px; padding: 14px; font-size: 17px; font-weight: 600; border: 0; border-radius: 8px; background: #1976d2; color: #fff; }
+  #msg { margin-top: 10px; min-height: 20px; color: #ffb74d; }
+  #stats { text-align: center; font-size: 14px; opacity: .7; margin: 8px; }
+  .row { display: flex; gap: 8px; } .row input { flex: 1; } .row .btn { width: auto; margin-top: 0; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Event Check-in</h1>
+  <button id="btnSettings" type="button">Settings</button>
+</header>
+
+<section id="settings" style="display:none">
+  <label for="api">Apps Script Web App URL (or type <b>demo</b> to test without Google)</label>
+  <input id="api" placeholder="https://script.google.com/macros/s/.../exec" autocomplete="off">
+  <label for="pin">Staff PIN</label>
+  <input id="pin" type="password" autocomplete="off">
+  <button class="btn" id="btnSave" type="button">Save &amp; start scanning</button>
+  <button class="btn" id="btnDemo" type="button" style="background:#555">Try demo mode (no setup)</button>
+  <button class="btn" id="btnDemoReset" type="button" style="background:#333">Reset demo check-ins</button>
+  <div id="msg"></div>
+</section>
+
+<section id="scan" style="display:none">
+  <div id="reader"></div>
+  <div id="stats"></div>
+  <div id="manual">
+    <label for="code">No camera / damaged QR? Type the code:</label>
+    <div class="row">
+      <input id="code" autocapitalize="characters" autocomplete="off">
+      <button class="btn" id="btnManual" type="button">Check</button>
+    </div>
+  </div>
+</section>
+
+<div id="result"><div class="big"></div><div class="name"></div><div class="detail"></div><div class="hint">Tap to scan next</div></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let cfg = JSON.parse(localStorage.getItem('qrCheckinCfg') || '{}');
+let scanner = null, busy = false, okCount = 0;
+
+// Allow one-tap setup links: index.html#api=URL&pin=PIN
+if (location.hash.length > 1) {
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (h.get('api')) cfg.api = h.get('api');
+  if (h.get('pin')) cfg.pin = h.get('pin');
+  localStorage.setItem('qrCheckinCfg', JSON.stringify(cfg));
+  history.replaceState(null, '', location.pathname + location.search);
+}
+
+// Demo mode (API URL = "demo"): no backend, check-ins stored on this phone only.
+const DEMO_GUESTS = { DEMO00000001: 'Ana Souza', DEMO00000002: 'Bruno Lima', DEMO00000003: 'Carla Dias',
+                      DEMO00000004: 'Diego Rocha', DEMO00000005: 'Elisa Martins' };
+function demoCall(params) {
+  if (params.action === 'ping') return { status: 'ok' };
+  const code = String(params.code || '').trim().toUpperCase();
+  if (!DEMO_GUESTS[code]) return { status: 'invalid', code };
+  const used = JSON.parse(localStorage.getItem('qrDemoUsed') || '{}');
+  if (used[code]) return { status: 'used', name: DEMO_GUESTS[code], usedAt: used[code] };
+  used[code] = new Date().toLocaleString();
+  localStorage.setItem('qrDemoUsed', JSON.stringify(used));
+  return { status: 'ok', name: DEMO_GUESTS[code], usedAt: used[code] };
+}
+
+async function call(params) {
+  if (cfg.api === 'demo') return demoCall(params);
+  const url = cfg.api + '?' + new URLSearchParams({ ...params, pin: cfg.pin });
+  const r = await fetch(url, { redirect: 'follow' });
+  return r.json();
+}
+
+function showSettings(message) {
+  stopScanner();
+  $('scan').style.display = 'none';
+  $('settings').style.display = 'block';
+  $('api').value = cfg.api || '';
+  $('pin').value = cfg.pin || '';
+  $('msg').textContent = message || '';
+}
+
+async function save() {
+  cfg = { api: $('api').value.trim(), pin: $('pin').value.trim() };
+  if (!cfg.api || !cfg.pin) { $('msg').textContent = 'Fill both fields.'; return; }
+  $('msg').textContent = 'Testing connection...';
+  try {
+    const res = await call({ action: 'ping' });
+    if (res.status !== 'ok') { $('msg').textContent = res.message || 'Connection failed'; return; }
+  } catch (e) { $('msg').textContent = 'Cannot reach the Web App URL. Check it and that access is "Anyone".'; return; }
+  localStorage.setItem('qrCheckinCfg', JSON.stringify(cfg));
+  showScanner();
+}
+
+function showScanner() {
+  $('settings').style.display = 'none';
+  $('scan').style.display = 'block';
+  startScanner();
+}
+
+function startScanner() {
+  if (scanner) return;
+  scanner = new Html5Qrcode('reader');
+  scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 } }, onScan, () => {})
+    .catch(err => { scanner = null; $('stats').textContent = 'Camera error: ' + err + ' (use the code field below)'; });
+}
+
+function stopScanner() {
+  if (scanner) { const s = scanner; scanner = null; s.stop().then(() => s.clear()).catch(() => {}); }
+}
+
+function beep(ok) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator(); o.frequency.value = ok ? 880 : 220; o.connect(ctx.destination);
+    o.start(); o.stop(ctx.currentTime + (ok ? 0.15 : 0.5));
+  } catch (e) {}
+  if (navigator.vibrate) navigator.vibrate(ok ? 100 : [300, 100, 300]);
+}
+
+function show(cls, big, name, detail) {
+  const el = $('result');
+  el.className = cls;
+  el.querySelector('.big').textContent = big;
+  el.querySelector('.name').textContent = name || '';
+  el.querySelector('.detail').textContent = detail || '';
+  el.querySelector('.hint').style.display = cls === 'wait' ? 'none' : 'block';
+  el.style.display = 'flex';
+}
+
+async function check(code) {
+  if (busy || !code) return;
+  busy = true;
+  if (scanner) { try { scanner.pause(true); } catch (e) {} }
+  show('wait', 'Checking...', code);
+  try {
+    const r = await call({ action: 'checkin', code: code.trim() });
+    if (r.status === 'ok') { okCount++; beep(true); show('ok', 'WELCOME!', r.name, 'Checked in at ' + r.usedAt); }
+    else if (r.status === 'used') { beep(false); show('used', 'QR CODE ALREADY USED', r.name, 'Used at ' + r.usedAt); }
+    else if (r.status === 'invalid') { beep(false); show('invalid', 'INVALID QR CODE', '', 'Code: ' + code); }
+    else if (r.status === 'unauthorized') { $('result').style.display = 'none'; busy = false; showSettings('Wrong staff PIN.'); return; }
+    else { beep(false); show('invalid', 'ERROR', '', r.message || 'Unknown error'); }
+  } catch (e) {
+    beep(false); show('invalid', 'NO CONNECTION', '', 'Check internet and try again.');
+  }
+  $('stats').textContent = okCount + ' checked in on this phone';
+}
+
+function onScan(text) { check(text); }
+
+$('result').addEventListener('click', () => {
+  if ($('result').className === 'wait') return;
+  $('result').style.display = 'none';
+  busy = false;
+  if (scanner) { try { scanner.resume(); } catch (e) {} }
+});
+$('btnSettings').onclick = () => showSettings();
+$('btnSave').onclick = save;
+$('btnDemo').onclick = () => { $('api').value = 'demo'; $('pin').value = 'demo'; save(); };
+$('btnDemoReset').onclick = () => { localStorage.removeItem('qrDemoUsed'); $('msg').textContent = 'Demo check-ins cleared.'; };
+$('btnManual').onclick = () => { check($('code').value); $('code').value = ''; };
+$('code').addEventListener('keydown', e => { if (e.key === 'Enter') $('btnManual').click(); });
+
+if (cfg.api && cfg.pin) showScanner(); else showSettings();
+</script>
+</body>
+</html>

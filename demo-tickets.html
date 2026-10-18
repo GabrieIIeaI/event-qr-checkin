@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo tickets</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 20px; text-align: center; }
+  .grid { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; }
+  .t { border: 1px solid #ccc; border-radius: 12px; padding: 14px; width: 240px; }
+  .t img { width: 200px; height: 200px; }
+  code { font-size: 15px; }
+</style>
+</head>
+<body>
+<h1>Demo tickets</h1>
+<p>Open the <a href="./">scanner</a> on your phone, tap <b>Try demo mode</b>, and scan these codes from this screen.<br>
+The last ticket is a fake code, so it shows as INVALID.</p>
+<div class="grid" id="grid"></div>
+<script>
+const guests = [['DEMO00000001','Ana Souza'],['DEMO00000002','Bruno Lima'],['DEMO00000003','Carla Dias'],
+                ['DEMO00000004','Diego Rocha'],['DEMO00000005','Elisa Martins'],['FAKE00000000','Fake ticket']];
+document.getElementById('grid').innerHTML = guests.map(([c, n]) =>
+  `<div class="t"><img alt="${c}" src="https://quickchart.io/qr?size=300&margin=2&text=${c}"><div><b>${n}</b></div><code>${c}</code></div>`).join('');
+</script>
+</body>
+</html>
